@@ -1,42 +1,15 @@
-/* Learn Kanji offline worker (cache names keep the code name kakitori): serves the app from cache so it works without a connection. */
-const VERSION = '1.2.1-0a22ee7af0';
-const CACHE = 'kakitori-' + VERSION;
-const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./privacy.html", "./fonts/klee-one-400.woff2", "./fonts/klee-one-600.woff2", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon.svg", "./icons/maskable-512.png"];
-
-self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS.map(a => new Request(a, { cache: 'reload' })))));
-});
-
+/* Learn Kanji's earlier address. The web version that lived here has moved (to the Microsoft Store, and to the
+   web edition at the new address). This service worker replaces its offline one: it deletes the old cached copy of
+   the web app, unregisters itself, and sends any open page to the notice (index.html), which hands the progress
+   on. The query string keeps the browser's HTTP cache from handing back the old page, which would register this
+   worker again. */
+self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
-    for (const key of await caches.keys()) if (key.startsWith('kakitori-') && key !== CACHE) await caches.delete(key);
-    await self.clients.claim();
-  })());
-});
-
-self.addEventListener('message', event => { if (event.data === 'skipWaiting') self.skipWaiting(); });
-
-self.addEventListener('fetch', event => {
-  const req = event.request;
-  if (req.method !== 'GET') return;
-  const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;
-  if (req.mode === 'navigate') {
-    event.respondWith((async () => {
-      const cached = await caches.match('./index.html');
-      if (cached) return cached;
-      try { return await fetch(req); } catch (e) { return new Response('Learn Kanji is offline and not cached yet.', { status: 503 }); }
-    })());
-    return;
-  }
-  event.respondWith((async () => {
-    const cached = await caches.match(req, { ignoreSearch: true });
-    if (cached) return cached;
-    const res = await fetch(req);
-    if (res.ok && res.type === 'basic') {
-      const cache = await caches.open(CACHE);
-      cache.put(req, res.clone());
-    }
-    return res;
+    // the earlier web version's caches only ('kakitori-web-' is the web edition's, never kept at this address)
+    for (const key of await caches.keys()) if (key.startsWith('kakitori-') && !key.startsWith('kakitori-web-')) await caches.delete(key);
+    await self.registration.unregister();
+    const notice = new URL('./?moved=1', self.registration.scope).href;
+    for (const client of await self.clients.matchAll({ type: 'window' })) client.navigate(notice);
   })());
 });
